@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="author" content="Б.Абдрахман">
+<meta name="description" content="Солнечная система в VR: планеты, оружие, бросок планет и мультиплеер. Автор: Б.Абдрахман">
+<meta name="theme-color" content="#03040c">
+<meta property="og:title" content="Солнечная система в VR">
+<meta property="og:description" content="Хватайте планеты, швыряйте их и разрушайте. Автор: Б.Абдрахман">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2303040c'/%3E%3Ccircle cx='32' cy='32' r='14' fill='%23e0a458'/%3E%3Cellipse cx='32' cy='32' rx='27' ry='8' fill='none' stroke='%237fb2ff' stroke-width='3' transform='rotate(-20 32 32)'/%3E%3C/svg%3E">
+<title>Солнечная система в VR</title>
+<style>
+:root{color-scheme:dark;--bg:#03040c;--panel:rgba(9,13,30,.78);--fg:#eaeeff;--mut:#9ca6d4;--acc:#7fb2ff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+canvas{display:block}
+.top{position:fixed;left:14px;right:14px;top:calc(env(safe-area-inset-top,0px) + 12px);pointer-events:none;max-width:min(420px,calc(100% - 200px))}
+.top h1{font-size:20px;margin:0 0 4px;font-weight:650;letter-spacing:.01em}
+.top p{margin:0;font-size:14px;line-height:1.45;color:var(--mut)}
+.bar{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.bar>*{pointer-events:auto}
+button{font:inherit;font-size:15px;color:var(--fg);background:var(--panel);border:1px solid rgba(127,178,255,.35);border-radius:10px;padding:10px 14px;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#vr{background:var(--acc);color:#04122b;border-color:var(--acc);font-weight:650}
+label{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--mut);background:var(--panel);border-radius:10px;padding:8px 12px}
+input[type=range]{width:110px;accent-color:var(--acc)}
+#note{font-size:13px;color:var(--mut);flex-basis:100%}
+.top p.by{margin-top:6px;font-size:13px;color:var(--acc)}
+#weap{position:fixed;right:14px;top:calc(env(safe-area-inset-top,0px) + 12px);display:flex;flex-direction:column;gap:8px;width:170px}
+#weap button{text-align:left;width:100%}
+#weap button.on{border-color:var(--acc);background:rgba(127,178,255,.25)}
+#weap button.rs{margin-top:6px;color:var(--mut)}
+@media(max-width:560px){#weap{width:138px}#weap button{font-size:13px;padding:8px 10px}}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Солнечная система</h1>
+  <p>Выберите оружие и нажмите на планету. В VR наведите перекрестие и нажмите курок. Планету можно схватить и бросить: контроллеры — грип, руки без контроллеров — кулак, на экране — перетаскивание. Курок или щипок — выстрел. Солнце тоже можно взорвать (ядерная бомба, «Уничтожить» или брошенные планеты). Пустое место вращает сцену. Движение: левый стик в VR (правый — вверх/вниз), WASD и Q/E на клавиатуре.</p>
+  <p class="by">Автор: Б.Абдрахман</p>
+  <p class="by" id="mp"></p>
+</div>
+<div class="bar">
+  <button id="vr" hidden>Войти в VR</button>
+  <button id="pause">Пауза</button>
+  <button id="snd">Звук: вкл</button>
+  <label>Скорость <input id="speed" type="range" min="0" max="4" step="0.1" value="1"></label>
+  <span id="note"></span>
+</div>
+<div id="weap"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>')</script>
+<script>window.THREE||document.write('<script src="three.min.js"><\/script>')</script>
+<script>if(!window.THREE){var n=document.getElementById('note');if(n)n.textContent='Не загрузилась библиотека three.js. Проверьте интернет или положите файл three.min.js рядом с index.html.'}</script>
+<script>
+(function(){
+var $=function(id){return document.getElementById(id)};
+var renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.xr.enabled=true;
+document.body.appendChild(renderer.domElement);
+
+var scene=new THREE.Scene();
+var camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,1000);
+camera.rotation.order='YXZ';
+var rig=new THREE.Group();
+rig.position.set(0,5,34);
+rig.add(camera);scene.add(rig);
+
+// Звёзды
+var sp=[];
+for(var i=0;i<2200;i++){var u=Math.random()*2-1,t=Math.random()*6.2832,s=Math.sqrt(1-u*u);sp.push(300*s*Math.cos(t),300*u,300*s*Math.sin(t))}
+var sg=new THREE.BufferGeometry();
+sg.setAttribute('position',new THREE.Float32BufferAttribute(sp,3));
+scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xffffff,size:1.1,sizeAttenuation:false})));
+
+// Свет
+scene.add(new THREE.AmbientLight(0x8890b8,.35));
+var sunLight=new THREE.PointLight(0xfff2d6,1.6,0);scene.add(sunLight);
+
+var targets=[],rings=[];
+function add(name,r,color,dist,speed,lines,emissive){
+  var m=new THREE.Mesh(new THREE.SphereGeometry(r,40,28),
+    emissive?new THREE.MeshBasicMaterial({color:color}):new THREE.MeshStandardMaterial({color:color,roughness:.85,metalness:0}));
+  scene.add(m);
+  if(dist){
+    var ring=new THREE.Mesh(new THREE.RingGeometry(dist-.03,dist+.03,128),new THREE.MeshBasicMaterial({color:0x7fb2ff,transparent:true,opacity:.22,side:THREE.DoubleSide}));
+    ring.rotation.x=-Math.PI/2;scene.add(ring);rings.push(ring);
+  }
+  var o={name:name,mesh:m,r:r,dist:dist,s:speed,a:0,a0:(targets.length*1.7)%6.28,lines:lines,col:color,hp:100,maxhp:100,dead:false,free:null,cr:[]};
+  targets.push(o);
+  if(dist)m.position.set(Math.cos(o.a)*dist,0,Math.sin(o.a)*dist);
+  return o;
+}
+var sunT=add('Солнце',2.4,0xffc94a,0,0,['Звезда диаметром около 1,39 млн км','В нём 99,86 % массы всей системы','Свет доходит до Земли за 8 минут'],true);
+sunT.hp=sunT.maxhp=300;
+add('Меркурий',.35,0xa59d94,5,.8,['Ближайшая к Солнцу планета','Год длится 88 земных суток','Диаметр около 4 880 км']);
+add('Венера',.6,0xe3b97a,7.2,.62,['Самая горячая планета: около 465 °C','Вращается в обратную сторону','Сутки на ней длиннее года']);
+add('Земля',.65,0x3c78d8,9.6,.5,['Единственная известная планета с жизнью','Океаны покрывают 71 % поверхности','Диаметр около 12 742 км']);
+add('Марс',.45,0xc1583a,12,.4,['Красный цвет даёт оксид железа','Гора Олимп выше 20 км','Два спутника: Фобос и Деймос']);
+add('Юпитер',1.5,0xd2a67c,16.5,.22,['Самая большая планета системы','Большое красное пятно — вечный шторм','У него более 90 спутников']);
+var sat=add('Сатурн',1.25,0xe0cf9a,21.5,.16,['Кольца из льда и камней','Плотность меньше плотности воды','Сутки длятся около 10,7 часа']);
+var sr=new THREE.Mesh(new THREE.RingGeometry(1.25*1.45,1.25*2.3,80),new THREE.MeshBasicMaterial({color:0xcdbb8a,transparent:true,opacity:.75,side:THREE.DoubleSide}));
+sr.rotation.x=Math.PI/2.15;sat.mesh.add(sr);
+add('Уран',.9,0x8fd6dc,26,.11,['Вращается, лёжа на боку','Температура опускается до −224 °C','Год длится около 84 земных лет']);
+add('Нептун',.9,0x3f56c9,30,.09,['Самые сильные ветры: до 2 000 км/ч','Год длится около 165 земных лет','Открыт в 1846 году']);
+
+// Информационная карточка
+var cv=document.createElement('canvas');cv.width=640;cv.height=320;
+var cx=cv.getContext('2d');
+var tex=new THREE.CanvasTexture(cv);
+var card=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,transparent:true}));
+card.renderOrder=10;card.visible=false;scene.add(card);
+function draw(t){
+  cx.clearRect(0,0,640,320);
+  cx.fillStyle='rgba(8,12,28,.92)';cx.fillRect(0,0,640,320);
+  cx.fillStyle='#7fb2ff';cx.fillRect(0,0,8,320);
+  cx.fillStyle='#eaeeff';cx.font='bold 46px system-ui,sans-serif';cx.fillText(t.name,38,72);
+  cx.font='27px system-ui,sans-serif';cx.fillStyle='#c9d1f5';
+  t.lines.forEach(function(l,i){cx.fillText('•  '+l,38,132+i*58)});
+  tex.needsUpdate=true;
+}
+
+// Перекрестие
+var ret=new THREE.Mesh(new THREE.RingGeometry(.012,.019,32),new THREE.MeshBasicMaterial({color:0xffffff,depthTest:false,transparent:true,opacity:.9}));
+ret.position.z=-1.5;ret.renderOrder=11;camera.add(ret);
+
+var org=new THREE.Vector3(),dir=new THREE.Vector3(),tmp=new THREE.Vector3(),cur=null,curD=1;
+function gaze(){
+  camera.updateMatrixWorld();
+  org.setFromMatrixPosition(camera.matrixWorld);
+  dir.set(0,0,-1).transformDirection(camera.matrixWorld);
+  var best=null,ba=9,bd=1;
+  for(var i=0;i<targets.length;i++){
+    var t=targets[i];if(t.dead)continue;t.mesh.getWorldPosition(tmp);tmp.sub(org);
+    var d=tmp.length(),ang=Math.acos(Math.min(1,dir.dot(tmp)/d));
+    if(ang<Math.atan2(t.r,d)+.06&&ang<ba){ba=ang;best=t;bd=d}
+  }
+  curD=bd;
+  if(best!==cur){cur=best;if(cur)draw(cur);card.visible=!!cur;ret.material.color.set(cur?0x7fb2ff:0xffffff);ret.scale.setScalar(cur?1.6:1)}
+  if(cur){
+    cur.mesh.getWorldPosition(card.position);
+    var w=Math.max(bd*.34,3);
+    card.scale.set(w,w/2,1);
+    card.position.y+=cur.r+w*.3;
+  }
+}
+
+// Управление без очков
+var yaw=0,pitch=-.12,drag=false,lx=0,ly=0;
+renderer.domElement.addEventListener('pointerdown',function(e){drag=true;lx=e.clientX;ly=e.clientY});
+addEventListener('pointerup',function(){drag=false});
+addEventListener('pointermove',function(e){
+  if(!drag)return;
+  yaw-=(e.clientX-lx)*.005;
+  pitch=Math.max(-1.2,Math.min(1.2,pitch-(e.clientY-ly)*.005));
+  lx=e.clientX;ly=e.clientY;
+});
+addEventListener('wheel',function(e){rig.position.addScaledVector(new THREE.Vector3(0,0,-1).applyEuler(camera.rotation),-e.deltaY*.03)},{passive:true});
+addEventListener('resize',function(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+
+var paused=false,speed=1;
+$('pause').onclick=function(){paused=!paused;this.textContent=paused?'Продолжить':'Пауза'};
+$('speed').oninput=function(){speed=+this.value};
+
+// VR
+var vb=$('vr'),note=$('note');
+if(navigator.xr){
+  navigator.xr.isSessionSupported('immersive-vr').then(function(ok){
+    if(ok)vb.hidden=false;
+    else note.textContent='VR недоступен на этом устройстве. Сцену можно вращать мышью или пальцем.';
+  }).catch(function(){});
+}else note.textContent='Браузер не поддерживает WebXR. Откройте ссылку в браузере шлема (Meta Quest, Pico).';
+vb.onclick=function(){
+  renderer.xr.setReferenceSpaceType('local-floor');
+  navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','hand-tracking']})
+    .then(function(s){return renderer.xr.setSession(s)})
+    .catch(function(e){note.textContent='Не удалось запустить VR: '+e.message});
+};
+
+// ===== Звук (синтез, без файлов) =====
+var AC=null,master=null,muted=false;
+function ac(){
+  if(!AC){
+    var C=window.AudioContext||window.webkitAudioContext;
+    if(!C)return null;
+    AC=new C();master=AC.createGain();master.gain.value=muted?0:1;master.connect(AC.destination);
+    var dg=AC.createGain();dg.gain.value=.05;dg.connect(master);
+    [55,82.7,110.4].forEach(function(f){var o=AC.createOscillator();o.type='sine';o.frequency.value=f;o.connect(dg);o.start()});
+  }
+  if(AC.state==='suspended')AC.resume();
+  return AC;
+}
+function tone(f1,f2,dur,type,vol){
+  var a=ac();if(!a)return;
+  var o=a.createOscillator(),g=a.createGain(),n=a.currentTime;
+  o.type=type||'sine';o.frequency.setValueAtTime(f1,n);o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),n+dur);
+  g.gain.setValueAtTime(vol||.2,n);g.gain.exponentialRampToValueAtTime(.001,n+dur);
+  o.connect(g);g.connect(master);o.start();o.stop(n+dur);
+}
+function noise(dur,vol,fc){
+  var a=ac();if(!a)return;
+  var len=Math.floor(a.sampleRate*dur),b=a.createBuffer(1,len,a.sampleRate),d=b.getChannelData(0);
+  for(var i=0;i<len;i++)d[i]=(Math.random()*2-1)*(1-i/len);
+  var s=a.createBufferSource();s.buffer=b;
+  var f=a.createBiquadFilter();f.type='lowpass';f.frequency.value=fc||800;
+  var g=a.createGain();g.gain.value=vol||.5;
+  s.connect(f);f.connect(g);g.connect(master);s.start();
+}
+function sfxClick(){tone(660,990,.08,'square',.06)}
+function sfxFire(w){
+  if(w==='laser'){tone(1500,250,.35,'sawtooth',.1);return}
+  noise(.4,.25,2200);tone(180,700,.35,'sawtooth',.07);
+  if(w==='nuke')tone(90,40,.8,'sine',.2);
+}
+function sfxBoom(size){noise(.5+size*.25,Math.min(.8,.3+size*.12),500+size*80);tone(130,30,.5+size*.12,'sine',Math.min(.5,.2+size*.06))}
+function sfxBig(){noise(2.2,.9,350);tone(70,18,1.8,'sine',.55)}
+addEventListener('pointerdown',function(){ac()});
+renderer.xr.addEventListener('sessionstart',function(){ac()});
+renderer.xr.addEventListener('sessionstart',function(){note.textContent='Контроллеры: курок — огонь, грип — схватить планету, отпустить — бросок. Руки: щипок — огонь, кулак — схватить, раскрыть кулак — бросок.'});
+$('snd').onclick=function(){
+  muted=!muted;ac();
+  if(master)master.gain.value=muted?0:1;
+  this.textContent=muted?'Звук: выкл':'Звук: вкл';
+};
+
+// ===== Игра: оружие и разрушения =====
+var weapon='missile';
+var keys=['missile','asteroid','nuke','laser','destroy','reset'];
+var labels=['Ракета','Астероид','Ядерная бомба','Лазер','Уничтожить планету','Восстановить'];
+var DMG={missile:20,asteroid:40,nuke:70,laser:10,destroy:999};
+var BOOM={missile:.8,asteroid:1.5,nuke:2.6,laser:.4,destroy:3.5};
+var fx=[],proj=[],hov=-1,wbtn=[];
+var gS=new THREE.SphereGeometry(1,14,10),gT=new THREE.TetrahedronGeometry(1),gC=new THREE.CylinderGeometry(.06,.06,1,8);
+var V=new THREE.Vector3(),V2=new THREE.Vector3();
+function mk(geo,color,op){return new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:color,transparent:true,opacity:op==null?1:op}))}
+function rv(){return new THREE.Vector3(Math.random()-.5,Math.random()-.5,Math.random()-.5)}
+function addFx(m,v,life,grow){scene.add(m);fx.push({m:m,v:v||new THREE.Vector3(),life:life,max:life,grow:grow||0})}
+function boom(p,size,color){sfxBoom(size);
+  var f=mk(gS,0xffb347,.9);f.position.copy(p);f.scale.setScalar(size*.3);addFx(f,null,.7,size*2.2);
+  for(var i=0;i<14;i++){
+    var c=mk(gT,color||0xffd27a,1);c.position.copy(p);c.scale.setScalar(size*(.04+Math.random()*.06));
+    addFx(c,rv().normalize().multiplyScalar(size*(1+Math.random()*3)),1+Math.random()*.8,0);
+  }
+}
+function beam(a,b){
+  var m=mk(gC,0xff4d4d,1),d=V.copy(b).sub(a),l=d.length();
+  m.position.copy(a).addScaledVector(d,.5);m.scale.set(1,l,1);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());
+  addFx(m,null,.4,0);
+}
+function muzzle(){
+  camera.updateMatrixWorld();
+  var o=new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+  var d=new THREE.Vector3(0,-.15,-1).transformDirection(camera.matrixWorld);
+  return o.addScaledVector(d,1.3).add(new THREE.Vector3(0,-.4,0));
+}
+function blow(t){sfxBig();
+  t.dead=true;t.mesh.visible=false;
+  var p=t.mesh.getWorldPosition(new THREE.Vector3());
+  boom(p,t.r*3,0xff9a4d);
+  for(var i=0;i<45;i++){
+    var c=mk(gT,t.col,1);c.position.copy(p).add(rv().multiplyScalar(t.r));
+    c.scale.setScalar(t.r*(.08+Math.random()*.18));c.rotation.set(Math.random()*6,Math.random()*6,0);
+    addFx(c,rv().normalize().multiplyScalar(t.r*(1.5+Math.random()*3.5)),3+Math.random()*2,0);
+  }
+  note.textContent=t.name+' уничтожена!';
+}
+function hit(t,pt,w,dm){
+  var b=BOOM[w];boom(pt,b*(t.r>1?1.4:1));
+  t.hp-=(dm||DMG[w]);
+  var f=Math.max(0,t.hp/t.maxhp),mt=t.mesh.material,isSun=(t===targets[0]);
+  if(isSun){mt.color.setHex(0xffc94a).lerp(new THREE.Color(0xff2a10),1-f);if(f<.5&&!t.warned){t.warned=1;note.textContent='Солнце нестабильно — ещё немного!'}}
+  else{if(mt.emissive)mt.emissive.setRGB(1-f,.18*(1-f),0);
+  mt.color.setHex(t.col).multiplyScalar(.35+.65*f)}
+  var cr=mk(gS,0x140c09,1);
+  cr.scale.setScalar(t.r*(.07+b*.035));cr.position.copy(t.mesh.worldToLocal(pt.clone()));
+  t.mesh.add(cr);t.cr.push(cr);
+  if(t.hp<=0){if(isSun)blowSun();else blow(t)}
+}
+function fire(t,pt,rw,from){
+  if(!t||t.dead)return;
+  note.textContent='';
+  var tp=t.mesh.getWorldPosition(new THREE.Vector3());
+  if(!pt){
+    camera.updateMatrixWorld();
+    var o=new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+    pt=tp.clone().sub(o).normalize().multiplyScalar(-t.r).add(tp);
+  }
+  var w=rw||weapon;sfxFire(w);var mz=from||muzzle();if(!rw)net('fire',{i:targets.indexOf(t),w:w,o:[mz.x,mz.y,mz.z],q:[pt.x,pt.y,pt.z]});
+  if(w==='laser'){beam(mz,pt);hit(t,pt,w);return}
+  var p={t:t,w:w,tm:0};
+  if(w==='asteroid'||w==='destroy'){
+    var big=w==='destroy',rr=big?t.r*.55:.45+Math.random()*.3;
+    p.m=new THREE.Mesh(new THREE.DodecahedronGeometry(rr),new THREE.MeshStandardMaterial({color:big?0xff7a3c:0x6f6a63,emissive:big?0xaa3300:0x000000,flatShading:true}));
+    p.r=rr;p.sp=big?20:28;
+    p.m.position.copy(tp).add(new THREE.Vector3(Math.random()-.5,Math.random()*.6,Math.random()-.5).normalize().multiplyScalar(45));
+  }else{
+    p.r=w==='nuke'?.35:.18;p.sp=42;
+    p.m=new THREE.Mesh(gS,new THREE.MeshBasicMaterial({color:w==='nuke'?0xff5a3c:0xfff0b0}));
+    p.m.scale.setScalar(p.r);p.m.position.copy(mz);
+  }
+  scene.add(p.m);proj.push(p);
+}
+function updProj(dt){
+  for(var i=proj.length-1;i>=0;i--){
+    var p=proj[i],t=p.t;
+    t.mesh.getWorldPosition(V);V2.copy(V).sub(p.m.position);
+    var d=V2.length();
+    if(t.dead||d<t.r+p.r*.6){
+      if(!t.dead)hit(t,p.m.position.clone().sub(V).normalize().multiplyScalar(t.r).add(V),p.w);
+      scene.remove(p.m);p.m.material.dispose();proj.splice(i,1);continue;
+    }
+    p.m.position.addScaledVector(V2.divideScalar(d),Math.min(p.sp*dt,d));
+    if(p.w==='asteroid'||p.w==='destroy')p.m.rotation.x+=dt*3;
+    else{
+      p.tm+=dt;
+      if(p.tm>.03){p.tm=0;var pf=mk(gS,0xffa040,.8);pf.position.copy(p.m.position);pf.scale.setScalar(p.r*.8);addFx(pf,null,.5,-p.r*1.2)}
+    }
+  }
+}
+function updFx(dt){
+  for(var i=fx.length-1;i>=0;i--){
+    var e=fx[i];e.life-=dt;
+    if(e.life<=0){scene.remove(e.m);e.m.material.dispose();fx.splice(i,1);continue}
+    e.m.position.addScaledVector(e.v,dt);
+    if(e.grow)e.m.scale.addScalar(e.grow*dt);
+    e.m.material.opacity=e.life/e.max;
+  }
+}
+function resetAll(){
+  targets.forEach(function(t){
+    t.dead=false;t.hp=t.maxhp;t.warned=0;t.h=null;t.mesh.visible=true;t.free=null;t.mesh.scale.setScalar(1);
+    t.cr.forEach(function(c){t.mesh.remove(c);c.material.dispose()});t.cr=[];
+    if(t.mesh.material.emissive)t.mesh.material.emissive.setRGB(0,0,0);
+    t.mesh.material.color.setHex(t.col);
+  });
+  sunLight.intensity=1.6;rings.forEach(function(r){r.visible=true});flashT=0;flashM.visible=false;
+  note.textContent='Планеты и Солнце восстановлены.';
+}
+
+// ===== Взрыв Солнца =====
+function sfxNova(){noise(3.2,1,300);tone(55,12,3,'sine',.7);tone(220,30,1.2,'sawtooth',.15)}
+var flashM=new THREE.Mesh(gS,new THREE.MeshBasicMaterial({color:0xfff4d0,transparent:true,opacity:0,side:THREE.BackSide,depthTest:false,depthWrite:false}));
+flashM.scale.setScalar(2);flashM.renderOrder=12;flashM.visible=false;flashM.frustumCulled=false;camera.add(flashM);
+var flashT=0;
+function updFlash(dt){
+  if(flashT<=0){if(flashM.visible)flashM.visible=false;return}
+  flashT-=dt;flashM.visible=flashT>0;flashM.material.opacity=Math.max(0,Math.min(1,flashT/1.1))*.95;
+}
+function sunFx(){
+  var s=targets[0];if(s.dead)return;
+  var inst=1-s.hp/s.maxhp;
+  if(inst<=0){s.mesh.scale.setScalar(1);sunLight.intensity=1.6;return}
+  var tt=performance.now()/1000;
+  s.mesh.scale.setScalar(1+inst*.06*Math.sin(tt*(6+inst*18)));
+  sunLight.intensity=1.6*(1+inst*.4*Math.sin(tt*13));
+}
+function blowSun(){
+  var s=targets[0],i;
+  s.dead=true;s.mesh.visible=false;s.mesh.scale.setScalar(1);
+  sunLight.intensity=0;rings.forEach(function(r){r.visible=false});
+  sfxNova();flashT=1.6;flashM.visible=true;
+  var c=mk(gS,0xfff2c0,1);c.scale.setScalar(s.r);addFx(c,null,1.7,36);
+  var sw=new THREE.Mesh(new THREE.RingGeometry(.94,1,96),new THREE.MeshBasicMaterial({color:0xffc880,transparent:true,opacity:1,side:THREE.DoubleSide,depthWrite:false}));
+  sw.rotation.x=-Math.PI/2;sw.scale.setScalar(s.r);addFx(sw,null,3.5,24);
+  for(i=0;i<160;i++){
+    var f=mk(gT,i%3?0xffb347:0xfff0b0,1);f.position.copy(rv().multiplyScalar(s.r*1.4));
+    f.scale.setScalar(.15+Math.random()*.45);f.rotation.set(Math.random()*6,Math.random()*6,0);
+    addFx(f,rv().normalize().multiplyScalar(8+Math.random()*34),3+Math.random()*3,0);
+  }
+  targets.forEach(function(t,k){
+    if(k===0||t.dead)return;
+    var d=t.mesh.position.length()||1;
+    if(d<8.5){blow(t);return}                       // ближние планеты испаряются
+    V.copy(t.mesh.position).divideScalar(d);
+    t.free='drift';t.h=null;t.v=V.clone().multiplyScalar(14+110/d);t.mesh.scale.setScalar(1);
+  });
+  note.textContent='Солнце взорвалось! Ближние планеты испарились, остальные разлетаются. Нажмите «Восстановить».';
+}
+
+// Панель оружия в VR (в мире) и на экране
+var pc=document.createElement('canvas');pc.width=512;pc.height=516;
+var pctx=pc.getContext('2d'),ptex=new THREE.CanvasTexture(pc);
+var pm=new THREE.Mesh(new THREE.PlaneGeometry(3.2,3.225),new THREE.MeshBasicMaterial({map:ptex,transparent:true}));
+pm.position.set(-4.2,4.4,30.5);pm.lookAt(0,6.4,34);pm.visible=false;scene.add(pm);
+var ac2=document.createElement('canvas');ac2.width=512;ac2.height=64;
+var c2=ac2.getContext('2d');c2.fillStyle='rgba(8,12,28,.92)';c2.fillRect(0,0,512,64);
+c2.fillStyle='#7fb2ff';c2.font='bold 28px system-ui,sans-serif';c2.fillText('Автор: Б.Абдрахман',24,42);
+var pa=new THREE.Mesh(new THREE.PlaneGeometry(3.2,.4),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(ac2)}));
+pa.position.set(0,-1.85,0);pm.add(pa);
+function drawPanel(){
+  pctx.clearRect(0,0,512,516);
+  for(var i=0;i<6;i++){
+    var y=i*86;
+    pctx.fillStyle=i===hov?'rgba(127,178,255,.6)':(keys[i]===weapon?'rgba(127,178,255,.3)':'rgba(8,12,28,.92)');
+    pctx.fillRect(0,y+4,512,78);
+    pctx.strokeStyle='#7fb2ff';pctx.lineWidth=3;pctx.strokeRect(1.5,y+5.5,509,75);
+    pctx.fillStyle='#eaeeff';pctx.font='bold 34px system-ui,sans-serif';pctx.fillText(labels[i],26,y+54);
+  }
+  ptex.needsUpdate=true;
+}
+function choose(k){sfxClick();
+  if(k==='reset'){resetAll();net('reset',{});return}
+  weapon=k;
+  wbtn.forEach(function(b,i){b.className=(keys[i]===k?'on':'')+(keys[i]==='reset'?' rs':'')});
+  note.textContent='Выбрано: '+labels[keys.indexOf(k)]+'. Нажмите на планету.';
+  drawPanel();
+}
+var wb=$('weap');
+keys.forEach(function(k,i){
+  var b=document.createElement('button');b.textContent=labels[i];b.className=k==='reset'?'rs':'';
+  b.onclick=function(){choose(k)};wb.appendChild(b);wbtn.push(b);
+});
+wbtn[0].className='on';
+drawPanel();
+
+var prc=new THREE.Raycaster();
+function step(dt){
+  updMove(dt);pm.visible=renderer.xr.isPresenting;
+  var h=-1;
+  if(pm.visible){
+    prc.ray.origin.copy(org);prc.ray.direction.copy(dir);
+    var hs=prc.intersectObject(pm);
+    if(hs.length)h=Math.min(5,Math.floor((1-hs[0].uv.y)*6));
+  }
+  if(h!==hov){hov=h;drawPanel()}
+  updProj(dt);updFx(dt);updHands(dt);updPhys(dt);updNet(dt);updFlash(dt);
+}
+
+// Выстрел: курок в VR или касание/клик на экране
+function onSel(){if(hov>=0)choose(keys[hov]);else if(cur)fire(cur)}
+var ctls=[];
+// ===== Руки: голографическая модель, хват и бросок =====
+var HR=.1,THROW_GAIN=3,CTL_OFF=new THREE.Vector3(0,-.03,.07); // CTL_OFF: смещение ладони от точки луча контроллера (подстройте под свой шлем)
+var C_IDLE=0x8fe3ff,C_AIM=0x7dffb0,C_FIST=0xffb04a,UP=new THREE.Vector3(0,1,0);
+var FN=['index','middle','ring','pinky'];
+var JN=['wrist','thumb-metacarpal','thumb-phalanx-proximal','thumb-phalanx-distal','thumb-tip'];
+var SEG=['metacarpal','phalanx-proximal','phalanx-intermediate','phalanx-distal','tip'];
+FN.forEach(function(f){SEG.forEach(function(s){JN.push(f+'-finger-'+s)})});
+var JI={};JN.forEach(function(n,i){JI[n]=i});
+function fj(f,s){return JI[f+'-finger-'+s]}
+var BONES=[[0,1],[1,2],[2,3],[3,4]];
+FN.forEach(function(f){var a=0;SEG.forEach(function(s){var b=fj(f,s);BONES.push([a,b]);a=b})});
+for(var bq=0;bq<3;bq++)BONES.push([fj(FN[bq],'phalanx-proximal'),fj(FN[bq+1],'phalanx-proximal')]);
+var PALM=[0,1,fj('index','phalanx-proximal'),fj('middle','phalanx-proximal'),fj('ring','phalanx-proximal'),fj('pinky','phalanx-proximal'),fj('pinky','metacarpal')];
+var boneG=new THREE.CylinderGeometry(1,1,1,8,1,true);
+
+// Голографическая рука (кости + суставы + ладонь). Цвет меняется: голубой, зелёный (цель), оранжевый (кулак)
+function HandVis(){
+  var self=this,g=this.g=new THREE.Group();g.visible=false;
+  this.mS=new THREE.MeshBasicMaterial({color:C_IDLE,transparent:true,opacity:.6,depthWrite:false});
+  this.mP=new THREE.MeshBasicMaterial({color:C_IDLE,transparent:true,opacity:.28,side:THREE.DoubleSide,depthWrite:false});
+  this.mJ=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.95});
+  this.js=JN.map(function(n){var m=new THREE.Mesh(gS,self.mJ);m.scale.setScalar(/tip$/.test(n)?.0075:.0058);m.frustumCulled=false;g.add(m);return m});
+  this.bs=BONES.map(function(){var m=new THREE.Mesh(boneG,self.mS);m.frustumCulled=false;g.add(m);return m});
+  var pg=new THREE.BufferGeometry();this.pa=new Float32Array(PALM.length*9);
+  pg.setAttribute('position',new THREE.BufferAttribute(this.pa,3));
+  this.pm=new THREE.Mesh(pg,this.mP);this.pm.frustumCulled=false;g.add(this.pm);
+  scene.add(g);
+}
+HandVis.prototype.set=function(P,col){
+  var i,a,b,d,l,m,n=PALM.length,pa=this.pa,k=0,c=V2.set(0,0,0);
+  for(i=0;i<this.js.length;i++)this.js[i].position.copy(P[i]);
+  for(i=0;i<BONES.length;i++){
+    a=P[BONES[i][0]];b=P[BONES[i][1]];d=V.subVectors(b,a);l=d.length();m=this.bs[i];
+    m.visible=l>1e-4;if(!m.visible)continue;
+    m.position.copy(a).addScaledVector(d,.5);m.scale.set(.0042,l,.0042);m.quaternion.setFromUnitVectors(UP,d.divideScalar(l));
+  }
+  for(i=0;i<n;i++)c.add(P[PALM[i]]);
+  c.divideScalar(n);
+  for(i=0;i<n;i++){
+    var p1=P[PALM[i]],p2=P[PALM[(i+1)%n]];
+    pa[k++]=c.x;pa[k++]=c.y;pa[k++]=c.z;pa[k++]=p1.x;pa[k++]=p1.y;pa[k++]=p1.z;pa[k++]=p2.x;pa[k++]=p2.y;pa[k++]=p2.z;
+  }
+  this.pm.geometry.attributes.position.needsUpdate=true;
+  this.mS.color.setHex(col);this.mP.color.setHex(col);
+};
+
+// Процедурная рука для контроллеров: курок сгибает указательный, грип — остальные пальцы
+var SY=[.03,.011,-.009,-.028],SL=[[.04,.025,.02],[.044,.028,.021],[.04,.026,.02],[.032,.019,.018]];
+var TO=new THREE.Vector3(),TC=new THREE.Vector3(),TD=new THREE.Vector3();
+function synth(P,side,ci,cg,tc){
+  var sx=side>0?-1:1,f,cu,y,L,t1,t2,t3,o=0;
+  P[0].set(0,0,.05);
+  for(f=0;f<4;f++){
+    cu=f===0?ci:cg;y=SY[f];L=SL[f];o=5+f*5;
+    t1=cu*1.35;t2=t1+cu*1.55;t3=t2+cu;
+    P[o].set(0,y*.75,.025);
+    P[o+1].set(0,y,-.04);
+    P[o+2].set(sx*Math.sin(t1)*L[0],y,-.04-Math.cos(t1)*L[0]);
+    P[o+3].set(P[o+2].x+sx*Math.sin(t2)*L[1],y,P[o+2].z-Math.cos(t2)*L[1]);
+    P[o+4].set(P[o+3].x+sx*Math.sin(t3)*L[2],y,P[o+3].z-Math.cos(t3)*L[2]);
+  }
+  TO.set(sx*.25,.8,-.55).normalize();TC.set(sx*.9,-.1,-.5).normalize();
+  P[1].set(sx*.012,.022,.028);
+  TD.lerpVectors(TO,TC,tc*.7);P[2].copy(P[1]).addScaledVector(TD,.035);
+  TD.lerpVectors(TO,TC,tc*.95);P[3].copy(P[2]).addScaledVector(TD,.03);
+  TD.lerpVectors(TO,TC,tc);P[4].copy(P[3]).addScaledVector(TD,.025);
+}
+
+var H=[0,1].map(function(i){
+  var beam=new THREE.Mesh(boneG,new THREE.MeshBasicMaterial({color:C_IDLE,transparent:true,opacity:.4,depthWrite:false}));
+  beam.visible=false;beam.frustumCulled=false;scene.add(beam);
+  var halo=new THREE.Mesh(gS,new THREE.MeshBasicMaterial({color:C_AIM,transparent:true,opacity:.25,side:THREE.BackSide,depthWrite:false}));
+  halo.visible=false;halo.frustumCulled=false;scene.add(halo);
+  return {ci:i,kind:null,src:null,side:i?1:-1,sqEv:false,pressed:false,wasP:false,fist:0,cI:0,cG:0,
+    anchor:new THREE.Vector3(),hold:new THREE.Vector3(),ro:new THREE.Vector3(),rd:new THREE.Vector3(0,0,-1),vel:new THREE.Vector3(),
+    hist:[],cand:null,vis:new HandVis(),beam:beam,halo:halo,P:JN.map(function(){return new THREE.Vector3()})};
+});
+var HT=new THREE.Vector3(),HQ=new THREE.Vector3();
+function haptic(h,i,ms){try{var g=h.src&&h.src.gamepad,a=g&&g.hapticActuators&&g.hapticActuators[0];if(a&&a.pulse)a.pulse(i,ms)}catch(e){}}
+function holdingOf(ci){for(var i=0;i<targets.length;i++){var t=targets[i];if(t.free==='held'&&t.h&&t.h.kind==='vr'&&t.h.ci===ci)return t}return null}
+
+// Поза руки с контроллером
+function poseCtl(h,dt){
+  var c=ctls[h.ci];if(!c||!c.visible)return false;
+  var gp=h.src&&h.src.gamepad,tr=0,sq=0,k=Math.min(1,dt*16),i;
+  if(gp&&gp.buttons){tr=gp.buttons[0]?gp.buttons[0].value:0;sq=gp.buttons[1]?gp.buttons[1].value:0}
+  if(h.sqEv)sq=Math.max(sq,1);
+  h.cI+=(tr-h.cI)*k;h.cG+=(sq-h.cG)*k;h.fist=h.cG;
+  synth(h.P,h.side,h.cI,h.cG,Math.max(h.cG*.9,h.cI*.35));
+  for(i=0;i<h.P.length;i++)h.P[i].add(CTL_OFF).applyMatrix4(c.matrixWorld);
+  h.anchor.copy(CTL_OFF).applyMatrix4(c.matrixWorld);
+  h.hold.set(0,.01,-.16).add(CTL_OFF).applyMatrix4(c.matrixWorld);
+  h.ro.setFromMatrixPosition(c.matrixWorld);
+  h.rd.set(0,0,-1).transformDirection(c.matrixWorld);
+  h.pressed=h.pressed?sq>.35:sq>.6;
+  return true;
+}
+// Поза руки при отслеживании рук (WebXR hand-tracking): кулак = хват
+function poseHand(h){
+  var hd=renderer.xr.getHand?renderer.xr.getHand(h.ci):null,J=hd&&hd.joints,i,f;
+  if(!J||!J.wrist||!hd.visible||!J.wrist.visible)return false;
+  for(i=0;i<JN.length;i++){var j=J[JN[i]];if(!j)return false;h.P[i].setFromMatrixPosition(j.matrixWorld)}
+  var wr=h.P[0],mp=h.P[fj('middle','phalanx-proximal')],c=0;
+  for(f=0;f<4;f++){
+    var pr=h.P[fj(FN[f],'phalanx-proximal')],tp=h.P[fj(FN[f],'tip')];
+    c+=Math.max(0,Math.min(1,(1.95-tp.distanceTo(wr)/Math.max(.03,pr.distanceTo(wr)))/.95));
+  }
+  h.fist=c/4;h.pressed=h.pressed?h.fist>.4:h.fist>.7;
+  V.subVectors(mp,wr).normalize();
+  h.anchor.copy(wr).lerp(mp,.55);
+  h.hold.copy(mp).addScaledVector(V,.11);
+  camera.getWorldPosition(HT);
+  HQ.set(1,0,0).transformDirection(camera.matrixWorld);
+  HT.addScaledVector(HQ,.19*h.side);HT.y-=.2;          // луч «от плеча через ладонь»
+  h.ro.copy(h.anchor);h.rd.copy(h.anchor).sub(HT).normalize();
+  return true;
+}
+// Что можно схватить: рядом с рукой или по лучу
+function pickGrab(h){
+  var best=null,ba=9,tol=h.kind==='hand'?.11:.08;
+  targets.forEach(function(t,i){
+    if(i===0||t.dead||t.free)return;
+    var tp=t.mesh.position,ang;
+    if(tp.distanceTo(h.hold)<t.r+.12)ang=-1;
+    else{V.subVectors(tp,h.ro);var d=V.length();ang=Math.acos(Math.min(1,h.rd.dot(V)/d));if(ang>Math.atan2(t.r,d)+tol)return}
+    if(ang<ba){ba=ang;best=t}
+  });
+  return best;
+}
+function updHands(dt){
+  var xr=renderer.xr.isPresenting,now=performance.now()/1000;
+  if(xr){rig.updateMatrixWorld(true);camera.updateMatrixWorld()}
+  H.forEach(function(h){
+    var ok=false;
+    if(xr){if(h.kind==='hand')ok=poseHand(h);else if(h.kind==='ctl')ok=poseCtl(h,dt)}
+    h.vis.g.visible=ok;
+    if(!ok){
+      h.beam.visible=false;h.halo.visible=false;h.cand=null;h.hist.length=0;
+      if(h.wasP){h.wasP=false;dropVR(h.ci)}
+      return;
+    }
+    // скорость руки по точке удержания (последние ~0.12 с)
+    h.hist.push({t:now,p:h.hold.clone()});
+    while(h.hist.length>2&&now-h.hist[0].t>.12)h.hist.shift();
+    var a=h.hist[0],b=h.hist[h.hist.length-1],dd=b.t-a.t;
+    if(dd>.02)h.vel.subVectors(b.p,a.p).divideScalar(dd);else h.vel.set(0,0,0);
+    var holding=holdingOf(h.ci);
+    h.cand=holding?null:pickGrab(h);
+    if(h.pressed&&!h.wasP){if(h.cand){startHold(h.cand,{kind:'vr',ci:h.ci});haptic(h,.7,50);h.cand=null}}
+    else if(!h.pressed&&h.wasP)dropVR(h.ci);
+    h.wasP=h.pressed;
+    holding=holdingOf(h.ci);
+    var col=(holding||h.pressed)?C_FIST:(h.cand?C_AIM:C_IDLE);
+    h.vis.set(h.P,col);
+    var show=!holding&&!h.pressed;
+    h.beam.visible=show;
+    if(show){
+      var len=2.4;
+      if(h.cand)len=Math.min(60,Math.max(.2,h.cand.mesh.position.distanceTo(h.ro)-h.cand.r*.85));
+      HT.copy(h.ro).addScaledVector(h.rd,.05);
+      h.beam.position.copy(HT).addScaledVector(h.rd,len*.5);
+      var w=.0025+len*.0007;h.beam.scale.set(w,len,w);
+      h.beam.quaternion.setFromUnitVectors(UP,h.rd);
+      h.beam.material.color.setHex(col);h.beam.material.opacity=h.cand?.9:.35;
+    }
+    h.halo.visible=!!h.cand;
+    if(h.cand){h.halo.position.copy(h.cand.mesh.position);h.halo.scale.setScalar(h.cand.r*1.15+.02);h.halo.material.opacity=.22+.1*Math.sin(now*8)}
+  });
+}
+
+for(var ci=0;ci<2;ci++){(function(ci){
+  var h=H[ci],ctl=renderer.xr.getController(ci);
+  ctl.addEventListener('connected',function(e){var s=e.data;h.src=s||null;h.kind=s&&s.hand?'hand':'ctl';h.side=s&&s.handedness==='left'?-1:1;h.hist.length=0});
+  ctl.addEventListener('disconnected',function(){dropVR(ci);h.kind=null;h.src=null;h.pressed=false;h.wasP=false});
+  // курок / щипок = выстрел (но не во время хвата — кулак может случайно «щипнуть»)
+  ctl.addEventListener('selectstart',function(){if(h.pressed||h.fist>.4)return;onSel()});
+  ctl.addEventListener('squeezestart',function(){h.sqEv=true});
+  ctl.addEventListener('squeezeend',function(){h.sqEv=false});
+  rig.add(ctl);
+  if(renderer.xr.getHand)rig.add(renderer.xr.getHand(ci));
+  ctls.push(ctl);
+})(ci)}
+// ===== Хват, бросок и мультиплеер =====
+var P=new THREE.Vector3(),wasHeld=false,cand=null,cx0=0,cy0=0,mp={x:0,y:0},mrc=new THREE.Raycaster();
+var room=null,avs={},tPres=0,clockT=Date.now()/1000;
+renderer.domElement.style.touchAction='none';
+function net(topic,data){if(room)try{room.emit(topic,data).catch(function(){})}catch(e){}}
+function v3(a){return Array.isArray(a)&&a.length===3&&a.every(function(x){return typeof x==='number'&&isFinite(x)})?new THREE.Vector3(a[0],a[1],a[2]).clampLength(0,200):null}
+function rd(v){return [Math.round(v.x*100)/100,Math.round(v.y*100)/100,Math.round(v.z*100)/100]}
+function startHold(t,h){
+  t.free='held';t.h=h;t.vel=new THREE.Vector3();t.last=null;t.rr=Math.min(t.r,HR);
+  if(h.kind==='vr'){t.pull=0;t.from=t.mesh.position.clone()}   // планета «притягивается» к руке
+  else{t.pull=1;t.mesh.scale.setScalar(Math.min(1,HR/t.r))}
+  sfxClick();
+}
+function flyOut(t,p,v){
+  t.free='fly';t.h=null;t.v=v.clone();t.life=7;t.cd=0;
+  t.rr=Math.min(t.r,HR);t.mesh.scale.setScalar(Math.min(1,HR/t.r));t.mesh.position.copy(p);
+}
+function release(t,amp){
+  var v=t.vel.clone().multiplyScalar(amp);if(v.length()>45)v.setLength(45);
+  var p=t.mesh.position.clone();
+  flyOut(t,p,v);sfxFire('missile');
+  net('throw',{i:targets.indexOf(t),p:rd(p),v:rd(v)});
+}
+// Помощь прицеливания: слегка довернуть бросок к ближайшей цели (включая Солнце)
+function assist(p,v,self){
+  var sp=v.length(),vd=v.clone().divideScalar(sp),best=null,ba=.24;
+  targets.forEach(function(o){
+    if(o===self||o.dead||o.free==='held')return;
+    var tv=o.mesh.position.clone().sub(p),d=tv.length();if(d<1)return;
+    var eff=Math.acos(Math.min(1,vd.dot(tv)/d))-Math.atan2(o.r,d);
+    if(eff<ba){ba=eff;best=tv.divideScalar(d)}
+  });
+  if(best)vd.lerp(best,.65).normalize();
+  return vd.multiplyScalar(sp);
+}
+function throwVR(t,h){
+  var v=h.vel.clone().multiplyScalar(THROW_GAIN),sp=v.length(),p=t.mesh.position.clone();
+  haptic(h,.9,70);
+  if(sp<1.6){t.free='return';t.h=null;sfxClick();return}   // просто разжали руку — планета возвращается на орбиту
+  if(sp>45)v.setLength(45);
+  v=assist(p,v,t);
+  flyOut(t,p,v);sfxFire('missile');
+  net('throw',{i:targets.indexOf(t),p:rd(p),v:rd(v)});
+}
+function dropVR(ci){targets.forEach(function(t){if(t.free==='held'&&t.h&&t.h.kind==='vr'&&t.h.ci===ci)throwVR(t,H[ci])})}
+function pickPlanet(e){
+  var rc=new THREE.Raycaster();
+  rc.setFromCamera({x:e.clientX/innerWidth*2-1,y:-(e.clientY/innerHeight)*2+1},camera);
+  var live=targets.filter(function(t,i){return i>0&&!t.dead&&!t.free});
+  var hs=rc.intersectObjects(live.map(function(t){return t.mesh}));
+  return hs.length?live.filter(function(t){return t.mesh===hs[0].object})[0]:null;
+}
+renderer.domElement.addEventListener('pointerdown',function(e){
+  if(renderer.xr.isPresenting)return;
+  cand=pickPlanet(e);cx0=e.clientX;cy0=e.clientY;wasHeld=false;
+  mp.x=e.clientX/innerWidth*2-1;mp.y=-(e.clientY/innerHeight)*2+1;
+  if(cand)drag=false;
+});
+addEventListener('pointermove',function(e){
+  mp.x=e.clientX/innerWidth*2-1;mp.y=-(e.clientY/innerHeight)*2+1;
+  if(cand&&!cand.free&&Math.hypot(e.clientX-cx0,e.clientY-cy0)>6){
+    camera.updateMatrixWorld();
+    var tp=cand.mesh.getWorldPosition(new THREE.Vector3()),cp=new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+    cand.hd=tp.distanceTo(cp);startHold(cand,{kind:'mouse'});cand=null;
+  }
+});
+addEventListener('pointerup',function(){
+  wasHeld=false;
+  targets.forEach(function(t){if(t.free==='held'&&t.h.kind==='mouse'){wasHeld=true;release(t,1)}});
+  cand=null;
+},true);
+function updPhys(dt){
+  targets.forEach(function(t){
+    if(t.free==='held'){
+      var h=t.h;
+      if(h.kind==='vr'){P.copy(H[h.ci].hold);if(t.pull<1){t.pull=Math.min(1,t.pull+dt/.22);var ez=1-Math.pow(1-t.pull,3),s1=Math.min(1,HR/t.r);P.lerpVectors(t.from,H[h.ci].hold,ez);t.mesh.scale.setScalar(1+(s1-1)*ez)}}
+      else{camera.updateMatrixWorld();mrc.setFromCamera(mp,camera);P.copy(mrc.ray.origin).addScaledVector(mrc.ray.direction,t.hd)}
+      if(t.last&&dt>0)t.vel.lerp(V2.copy(P).sub(t.last).divideScalar(dt),.4);
+      t.last=t.last||new THREE.Vector3();t.last.copy(P);
+      t.mesh.position.copy(P);
+    }else if(t.free==='return'){
+      var ra=t.a0+clockT*t.s*.5;V.set(Math.cos(ra)*t.dist,0,Math.sin(ra)*t.dist);
+      t.mesh.position.lerp(V,Math.min(1,dt*3));
+      var rs=t.mesh.scale.x;t.mesh.scale.setScalar(rs+(1-rs)*Math.min(1,dt*3));
+      if(t.mesh.position.distanceTo(V)<.25){t.free=null;t.mesh.scale.setScalar(1)}
+    }else if(t.free==='drift'){
+      t.mesh.position.addScaledVector(t.v,dt);t.mesh.rotation.x+=dt*2;
+      if(t.mesh.position.length()>160){t.dead=true;t.mesh.visible=false;t.free=null}
+    }else if(t.free==='fly'){
+      t.mesh.position.addScaledVector(t.v,dt);t.life-=dt;t.cd-=dt;
+      if(t.cd<=0){
+        for(var k=0;k<targets.length;k++){
+          var o=targets[k];
+          if(o===t||o.dead||o.free==='held'||o.free==='remote')continue;
+          V.copy(t.mesh.position).sub(o.mesh.position);
+          var d=V.length(),orad=o.free==='fly'?o.rr:o.r;
+          if(d<orad+t.rr){
+            var n=V.clone().divideScalar(d||1);
+            if(k===0){hit(o,o.mesh.position.clone().addScaledVector(n,orad),'asteroid',15+t.v.length()*1.2+t.r*20);blow(t);t.free=null;break}
+            var dm=Math.min(90,10+t.v.length()*2.5);
+            hit(o,o.mesh.position.clone().addScaledVector(n,orad),'asteroid',dm);
+            hit(t,t.mesh.position.clone().addScaledVector(n,-t.rr),'missile',dm*.4);
+            t.mesh.position.copy(o.mesh.position).addScaledVector(n,orad+t.rr+.02);
+            t.v.multiplyScalar(-.35);t.cd=.4;break;
+          }
+        }
+      }
+      if(t.dead)t.free=null;
+      else if(t.free==='fly'&&(t.life<=0||t.mesh.position.length()>150)){t.free='return';t.h=null}
+    }
+  });
+}
+function updNet(dt){
+  if(!room)return;
+  var seen={};
+  room.peers().forEach(function(p){
+    if(p.isMe)return;
+    var pr=p.presence||{},av=avs[p.peer];
+    if(!av){
+      var hs=0;for(var q=0;q<p.peer.length;q++)hs=(hs*31+p.peer.charCodeAt(q))%360;
+      var col=new THREE.Color().setHSL(hs/360,.7,.6).getHex();
+      av=avs[p.peer]=new THREE.Group();
+      ['head','l','r'].forEach(function(k){var m=mk(gS,col,.95);m.scale.setScalar(k==='head'?.2:.06);av[k]=m;av.add(m)});
+      scene.add(av);
+    }
+    ['hd','l','r'].forEach(function(k){
+      var m=av[k==='hd'?'head':k],a=v3(pr[k]);
+      m.visible=!!a;if(a)m.position.copy(a);
+    });
+    var hd=pr.held;
+    if(Array.isArray(hd)&&hd.length===4){
+      var t=targets[hd[0]],pp=v3(hd.slice(1));
+      if(t&&pp&&hd[0]>0&&!t.dead&&t.free!=='fly'&&t.free!=='held'){
+        t.free='remote';t.mesh.position.copy(pp);t.mesh.scale.setScalar(Math.min(1,HR/t.r));seen[hd[0]]=1;
+      }
+    }
+  });
+  targets.forEach(function(t,i){if(t.free==='remote'&&!seen[i]){t.free=null;t.mesh.scale.setScalar(1)}});
+  tPres+=dt;
+  if(tPres>.07){
+    tPres=0;
+    var pr={},hp=new THREE.Vector3();
+    camera.getWorldPosition(hp);pr.hd=rd(hp);
+    if(renderer.xr.isPresenting)ctls.forEach(function(c,i){c.getWorldPosition(hp);pr[i?'r':'l']=rd(hp)});
+    else{pr.l=null;pr.r=null}
+    pr.held=null;
+    targets.forEach(function(t,i){if(t.free==='held')pr.held=[i].concat(rd(t.mesh.position))});
+    room.presence(pr).catch(function(){});
+  }
+}
+
+// Движение по пространству
+var keysDown={};
+addEventListener('keydown',function(e){keysDown[e.code]=true});
+addEventListener('keyup',function(e){keysDown[e.code]=false});
+function updMove(dt){
+  var x=0,y=0,z=0;
+  if(renderer.xr.isPresenting){
+    var s=renderer.xr.getSession();
+    if(s)for(var i=0;i<s.inputSources.length;i++){
+      var src=s.inputSources[i],g=src.gamepad;if(!g)continue;
+      var a=g.axes,ax=a.length>=4?a[2]:a[0],ay=a.length>=4?a[3]:a[1];
+      if(Math.abs(ax)<.15)ax=0;
+      if(Math.abs(ay)<.15)ay=0;
+      if(src.handedness==='right')y-=ay;else{x+=ax;z+=ay}
+    }
+  }else{
+    x=(keysDown.KeyD||keysDown.ArrowRight?1:0)-(keysDown.KeyA||keysDown.ArrowLeft?1:0);
+    z=(keysDown.KeyS||keysDown.ArrowDown?1:0)-(keysDown.KeyW||keysDown.ArrowUp?1:0);
+    y=(keysDown.KeyE?1:0)-(keysDown.KeyQ?1:0);
+  }
+  if(x||y||z){
+    camera.updateMatrixWorld();
+    var f=new THREE.Vector3(0,0,-1).transformDirection(camera.matrixWorld);f.y=0;
+    if(f.lengthSq()<1e-4)f.set(0,0,-1);
+    f.normalize();
+    var r=new THREE.Vector3(-f.z,0,f.x),sp=(keysDown.ShiftLeft?3:1)*8*dt;
+    rig.position.addScaledVector(f,-z*sp).addScaledVector(r,x*sp);
+    rig.position.y=Math.max(-10,Math.min(70,rig.position.y+y*sp));
+    var len=Math.hypot(rig.position.x,rig.position.z);
+    if(len>120){rig.position.x*=120/len;rig.position.z*=120/len}
+  }
+  pm.position.set(rig.position.x-4.2,rig.position.y-.6,rig.position.z-3.5);
+  pm.lookAt(rig.position.x,rig.position.y+1.4,rig.position.z);
+}
+
+var sx=0,sy=0;
+renderer.domElement.addEventListener('pointerdown',function(e){sx=e.clientX;sy=e.clientY});
+renderer.domElement.addEventListener('pointerup',function(e){
+  if(renderer.xr.isPresenting||wasHeld||Math.hypot(e.clientX-sx,e.clientY-sy)>6)return;
+  var rc=new THREE.Raycaster();
+  rc.setFromCamera({x:e.clientX/innerWidth*2-1,y:-(e.clientY/innerHeight)*2+1},camera);
+  var live=targets.filter(function(t){return !t.dead});
+  var hs=rc.intersectObjects(live.map(function(t){return t.mesh}));
+  if(hs.length){
+    var o=hs[0].object;
+    fire(live.filter(function(t){return t.mesh===o})[0],hs[0].point);
+  }
+});
+
+var clock=new THREE.Clock();
+renderer.setAnimationLoop(function(){
+  var dt=clock.getDelta();
+  if(!paused){clockT+=dt*speed;
+    for(var i=1;i<targets.length;i++){
+      var t=targets[i];if(t.free)continue;t.a=t.a0+clockT*t.s*.5;
+      t.mesh.position.set(Math.cos(t.a)*t.dist,0,Math.sin(t.a)*t.dist);
+    }
+    for(var j=0;j<targets.length;j++)targets[j].mesh.rotation.y+=dt*.4*speed;
+  }
+  if(!renderer.xr.isPresenting)camera.rotation.set(pitch,yaw,0);
+  gaze();
+  step(dt);sunFx();
+  renderer.render(scene,camera);
+});
+})();
+</script>
+</body>
+</html>
